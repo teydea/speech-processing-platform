@@ -33,7 +33,7 @@ docker-compose up --build
 python client/stream_tts.py
 ```
 
-Полный цикл ASR -> TTS:
+Полный цикл ASR →  TTS:
 Подготовьте client/input.wav (моно, 16-bit, 16kHz, <15 сек), затем
 ```bash
 python client/echo_bytes.py
@@ -54,10 +54,10 @@ cd asr-service && python -m pytest tests/ -v && cd ..
 Тесты покрывают пограничные случаи: пустой текст (TTS), пустое/слишком длинное аудио (ASR).
 
 ## Архитектура
-tts-service: стриминговый TTS на основе Coqui TTS (tacotron2-DDC)
-asr-service: STT по raw PCM с использованием faster-whisper/base.en
-gateway: единая точка входа, проксирует запросы и реализует /api/echo-bytes
-client/: скрипты для end-to-end проверки
+- tts-service: стриминговый TTS на основе Coqui TTS (tacotron2-DDC)
+- asr-service: STT по raw PCM с использованием faster-whisper/base.en
+- gateway: единая точка входа, проксирует запросы и реализует /api/echo-bytes
+- client/: скрипты для end-to-end проверки
 
 ## Документация
 Подробнее о принятых решениях -- см. DECISIONS.md.
