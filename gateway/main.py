@@ -1,11 +1,15 @@
-from fastapi import FastAPI, WebSocket
+# gateway/main.py
+from fastapi import FastAPI, WebSocket, Request
+from fastapi.responses import StreamingResponse
 import httpx
-import os
 import json
-
-TTS_URL = os.getenv("TTS_URL", "http://tts:8082")
+import os
 
 app = FastAPI()
+
+TTS_URL = os.getenv("TTS_URL", "http://tts:8082")
+ASR_URL = os.getenv("ASR_URL", "http://asr:8081")
+
 
 @app.websocket("/ws/tts")
 async def proxy_tts(websocket: WebSocket):
@@ -13,7 +17,7 @@ async def proxy_tts(websocket: WebSocket):
     try:
         data = await websocket.receive_text()
         payload = json.loads(data)
-        
+
         if "text" in payload:
             text = payload["text"]
         elif "segments" in payload:
@@ -23,10 +27,52 @@ async def proxy_tts(websocket: WebSocket):
             return
 
         async with httpx.AsyncClient(timeout=60.0) as client:
-            await websocket.send_text('{"error": "HTTP TTS not implemented yet. Use direct TTS for now."}')
-            return
+            async with client.stream("POST", f"{TTS_URL}/api/tts", json={"text": text}) as resp:
+                if resp.status_code != 200:
+                    await websocket.send_text(f'{{"error": "TTS failed: {resp.status_code}"}}')
+                    return
+
+                async for chunk in resp.aiter_bytes():
+                    await websocket.send_bytes(chunk)
+
+                await websocket.send_text('{"type": "end"}')
 
     except Exception as e:
         await websocket.send_text(f'{{"error": "{str(e)}"}}')
     finally:
         await websocket.close()
+
+
+@app.post("/api/echo-bytes")
+async def echo_bytes(request: Request):
+    sr = request.query_params.get("sr", "16000")
+    ch = request.query_params.get("ch", "1")
+
+    body = await request.body()
+
+    # 1. ASR
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        asr_resp = await client.post(
+            f"{ASR_URL}/api/stt/bytes",
+            params={"sr": sr, "ch": ch},
+            content=body
+        )
+        if asr_resp.status_code != 200:
+            return asr_resp.json()
+        stt_result = asr_resp.json()
+        text = stt_result.get("text", "")
+
+    # 2. TTS
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        tts_resp = await client.post(
+            f"{TTS_URL}/api/tts",
+            json={"text": text}
+        )
+        if tts_resp.status_code != 200:
+            return {"error": "TTS failed"}
+
+        async def stream_audio():
+            async for chunk in tts_resp.aiter_bytes():
+                yield chunk
+
+        return StreamingResponse(stream_audio(), media_type="application/octet-stream")

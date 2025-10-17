@@ -1,0 +1,6 @@
+torch==2.3.0
+torchaudio==2.3.0
+TTS==0.22.0
+fastapi
+uvicorn[standard]
+numpy

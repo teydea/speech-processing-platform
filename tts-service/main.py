@@ -1,6 +1,7 @@
-from fastapi import FastAPI, WebSocket
+# tts-service/main.py
+from fastapi import FastAPI, WebSocket, Request
+from fastapi.responses import StreamingResponse, JSONResponse
 from TTS.api import TTS
-from fastapi import WebSocket, Request, Response
 import os
 import logging
 import json
@@ -11,10 +12,12 @@ logger = logging.getLogger("tts")
 
 app = FastAPI()
 
-model_name = os.getenv("MODEL_NAME", "en/ljspeech/tacotron2-DDC")
+model_name = os.getenv("MODEL_NAME", "tts_models/en/ljspeech/tacotron2-DDC")
 logger.info(f"Loading TTS model: {model_name}")
 tts_model = TTS(model_name=model_name, progress_bar=False, gpu=False)
 logger.info("TTS model loaded successfully.")
+
+CHUNK_SIZE = 4096
 
 @app.websocket("/ws/tts")
 async def tts_stream(websocket: WebSocket):
@@ -23,7 +26,7 @@ async def tts_stream(websocket: WebSocket):
         data = await websocket.receive_text()
         payload = json.loads(data)
         text = payload.get("text", "").strip()
-        
+
         if not text:
             await websocket.send_text('{"error": "empty text"}')
             return
@@ -31,12 +34,14 @@ async def tts_stream(websocket: WebSocket):
         logger.info(f"Generating speech for: {text[:50]}...")
 
         wav = tts_model.tts(text)
-
         wav = np.array(wav)
         wav = (wav * 32767).astype(np.int16)
         audio_bytes = wav.tobytes()
 
-        await websocket.send_bytes(audio_bytes)
+        for i in range(0, len(audio_bytes), CHUNK_SIZE):
+            chunk = audio_bytes[i:i + CHUNK_SIZE]
+            await websocket.send_bytes(chunk)
+
         await websocket.send_text('{"type": "end"}')
 
     except Exception as e:
@@ -45,20 +50,27 @@ async def tts_stream(websocket: WebSocket):
     finally:
         await websocket.close()
 
-from fastapi.responses import StreamingResponse
 
 @app.post("/api/tts")
 async def tts_http(request: Request):
-    data = await request.json()
-    text = data.get("text", "").strip()
-    if not text:
-        return {"error": "empty text"}
+    try:
+        data = await request.json()
+        text = data.get("text", "").strip()
+        if not text:
+            return JSONResponse({"error": "empty text"}, status_code=400)
 
-    logger.info(f"TTS HTTP input: {text}")
-    wav = tts_model.tts(text)
+        logger.info(f"TTS HTTP input: {text}")
+        wav = tts_model.tts(text)
+        wav = np.array(wav)
+        wav = (wav * 32767).astype(np.int16)
+        audio_bytes = wav.tobytes()
 
-    wav = np.array(wav)
-    wav = (wav * 32767).astype(np.int16)
-    audio_bytes = wav.tobytes()
+        def iter_chunks():
+            for i in range(0, len(audio_bytes), CHUNK_SIZE):
+                yield audio_bytes[i:i + CHUNK_SIZE]
 
-    return Response(content=audio_bytes, media_type="application/octet-stream")
+        return StreamingResponse(iter_chunks(), media_type="application/octet-stream")
+
+    except Exception as e:
+        logger.error(f"TTS HTTP error: {e}")
+        return JSONResponse({"error": str(e)}, status_code=500)

@@ -1,10 +1,11 @@
+# client/stream_tts.py
 import asyncio
 import websockets
 import wave
 import json
 
 async def main():
-    uri = "ws://localhost:8082/ws/tts"
+    uri = "ws://localhost:8000/ws/tts"
     
     async with websockets.connect(uri) as websocket:
         text = "Hello. This is a test of the text to speech system."
@@ -20,7 +21,6 @@ async def main():
             while True:
                 try:
                     message = await websocket.recv()
-                    
                     if isinstance(message, str):
                         print("Control message:", message)
                         if '"type":"end"' in message or '"error"' in message:
@@ -28,9 +28,9 @@ async def main():
                     else:
                         wf.writeframes(message)
                         print(f"Received {len(message)} audio bytes")
-
                 except Exception as e:
                     print(f"Error: {e}")
+                    break
 
         print("Audio saved to out.wav")
 

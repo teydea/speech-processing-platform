@@ -1,3 +1,4 @@
+# tts-service/Dockerfile
 FROM python:3.10-slim
 
 WORKDIR /app
@@ -6,10 +7,9 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends libsndfile1 && \
     rm -rf /var/lib/apt/lists/*
 
+COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
-
-RUN pip install --no-cache-dir TTS fastapi uvicorn[standard]
+    pip install --no-cache-dir -r requirements.txt
 
 COPY main.py .
 
