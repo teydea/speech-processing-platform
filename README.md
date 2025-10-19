@@ -32,12 +32,14 @@ docker-compose up --build
 ```bash
 python client/stream_tts.py
 ```
+Скрипт подключается к WebSocket, отправляет текст и сохраняет аудио в out.wav.
 
-Полный цикл ASR →  TTS:
+Полный цикл ASR -> TTS:
 Подготовьте client/input.wav (моно, 16-bit, 16kHz, <15 сек), затем
 ```bash
 python client/echo_bytes.py
 ```
+Скрипт отправляет input.wav на распознавание, печатает распознанный текст и сегменты, затем синтезирует речь и сохраняет результаты в out_echo.wav.
 
 ## Unit-тесты
 Для запуска unit-тестов требуется установка зависимостей:
