@@ -1,6 +1,6 @@
 # gateway/main.py
 from fastapi import FastAPI, WebSocket, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, JSONResponse
 import httpx
 import json
 import os
@@ -43,6 +43,20 @@ async def proxy_tts(websocket: WebSocket):
         await websocket.close()
 
 
+@app.post("/api/stt/bytes")
+async def proxy_stt(request: Request):
+    sr = request.query_params.get("sr")
+    ch = request.query_params.get("ch")
+    body = await request.body()
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        resp = await client.post(
+            f"{ASR_URL}/api/stt/bytes",
+            params={"sr": sr, "ch": ch},
+            content=body
+        )
+        return JSONResponse(resp.json(), status_code=resp.status_code)
+
+
 @app.post("/api/echo-bytes")
 async def echo_bytes(request: Request):
     sr = request.query_params.get("sr", "16000")
@@ -58,7 +72,7 @@ async def echo_bytes(request: Request):
             content=body
         )
         if asr_resp.status_code != 200:
-            return asr_resp.json()
+            return JSONResponse(asr_resp.json(), status_code=asr_resp.status_code)
         stt_result = asr_resp.json()
         text = stt_result.get("text", "")
 
@@ -69,7 +83,8 @@ async def echo_bytes(request: Request):
             json={"text": text}
         )
         if tts_resp.status_code != 200:
-            return {"error": "TTS failed"}
+            error_detail = await tts_resp.aread()
+            return JSONResponse({"error": "TTS failed", "detail": error_detail.decode()}, status_code=500)
 
         async def stream_audio():
             async for chunk in tts_resp.aiter_bytes():
